@@ -254,7 +254,8 @@ type (
 	}
 
 	nameMapperRegex struct {
-		mapping map[string]*prefixRegex
+		mapping   map[string]*prefixRegex
+		resolvers []common.Resolver
 	}
 )
 
@@ -302,7 +303,7 @@ func (nmr *nameMapperRegex) String() string {
 func parseNameMapper(s string) (*nameMapperRegex, error) {
 	mapper := make(map[string]*prefixRegex)
 	if s == "" {
-		return &nameMapperRegex{mapper}, nil
+		return &nameMapperRegex{mapper, nil}, nil
 	}
 
 	toks := strings.Split(s, ",")
@@ -327,29 +328,41 @@ func parseNameMapper(s string) (*nameMapperRegex, error) {
 		}
 	}
 
-	return &nameMapperRegex{mapper}, nil
+	return &nameMapperRegex{mapper, nil}, nil
 }
 
-func (nmr *nameMapperRegex) MatchAndName(nacl common.ProcAttributes) (bool, string) {
+// AddResolvers implements common.MatchNamer interface
+func (nmr *nameMapperRegex) AddResolver(resolver common.Resolver) {
+	nmr.resolvers = append(nmr.resolvers, resolver)
+}
+
+func (nmr *nameMapperRegex) labels(nacl common.ProcAttributes) string {
 	ret := ""
+	if !*showUser && !*showPod {
+		return ret
+	}
+	for _, res := range nmr.resolvers {
+		res.Resolve(&nacl)
+	}
 	if *showUser {
 		ret += "user:" + nacl.Username + ";"
 	}
 	if *showPod {
 		ret += "pod:" + nacl.Pod + ";"
 	}
+	return ret
+}
 
+func (nmr *nameMapperRegex) MatchAndName(nacl common.ProcAttributes) (bool, string) {
 	if pregex, ok := nmr.mapping[nacl.Name]; ok {
 		if pregex == nil {
-			ret += nacl.Name
-			return true, ret
+			return true, nmr.labels(nacl) + nacl.Name
 		}
 		matches := pregex.regex.FindStringSubmatch(strings.Join(nacl.Cmdline, " "))
 		if len(matches) > 1 {
 			for _, matchstr := range matches[1:] {
 				if matchstr != "" {
-					ret += pregex.prefix + matchstr
-					return true, ret
+					return true, nmr.labels(nacl) + pregex.prefix + matchstr
 				}
 			}
 		}
@@ -455,6 +468,10 @@ func main() {
 		}
 		matchnamer = namemapper
 	}
+	// add additional resolvers in the same way
+	if *showPod {
+		matchnamer.AddResolver(proc.NewDockerResolver(*debug))
+	}
 
 	pc, err := NewProcessCollector(*procfsPath, *children, *threads, matchnamer, *recheck, *debug)
 	if err != nil {
@@ -473,6 +490,9 @@ func main() {
 		fmt.Print(fscraper.Scrape())
 		return
 	}
+	if *debug {
+		log.Println("Starting...")
+	}
 
 	http.Handle(*metricsPath, prometheus.Handler())
 
@@ -485,6 +505,7 @@ func main() {
 			</body>
 			</html>`))
 	})
+
 	if err := http.ListenAndServe(*listenAddress, nil); err != nil {
 		log.Fatalf("Unable to setup HTTP server: %v", err)
 	}
@@ -523,16 +544,9 @@ func NewProcessCollector(
 		return nil, err
 	}
 
-	resolvers := []common.Resolver{}
-
-	// add additional resolvers in the same way
-	if *showPod {
-		resolvers = append(resolvers, proc.NewDockerResolver(true))
-	}
-
 	p := &NamedProcessCollector{
 		scrapeChan: make(chan scrapeRequest),
-		Grouper:    proc.NewGrouper(n, children, threads, recheck, debug, resolvers),
+		Grouper:    proc.NewGrouper(n, children, threads, recheck, debug),
 		source:     fs,
 		threads:    threads,
 		debug:      debug,

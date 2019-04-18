@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	common "github.com/ncabatoff/process-exporter"
 )
@@ -13,8 +14,9 @@ import (
 type (
 	// DockerResolver ...
 	DockerResolver struct {
-		debug bool
-		pods  map[int]string
+		debug        bool
+		pods         map[int]string
+		lastloadtime time.Time
 	}
 )
 
@@ -32,25 +34,33 @@ func NewDockerResolver(debug bool) *DockerResolver {
 }
 
 // Resolve implements Resolver
-func (r *DockerResolver) Resolve(pa *common.ProcAttributes, pid int) {
-	fmt.Println(pid)
-	if val, ok := r.pods[pid]; ok {
+func (r *DockerResolver) Resolve(pa *common.ProcAttributes) {
+	if r.debug {
+		log.Printf("Resolving pid %d", pa.Pid)
+	}
+	if val, ok := r.pods[pa.Pid]; ok {
 		(*pa).Pod = val
 		return
 	}
 	r.load()
-	if val, ok := r.pods[pid]; ok {
+	if val, ok := r.pods[pa.Pid]; ok {
 		(*pa).Pod = val
 	} else {
-		r.pods[pid] = ""
+		r.pods[pa.Pid] = ""
 	}
 }
 
 func (r *DockerResolver) load() {
+	t := time.Now()
+	// reload list of docker processes no more often than each 2 seconds. Should be enough...
+	if t.Sub(r.lastloadtime).Seconds() < 10 {
+		return
+	}
+	r.lastloadtime = t
 	out, err := exec.Command("bash", "-c", "docker ps -q | xargs docker inspect --format '{{.State.Pid}} {{index .Config.Labels \"io.kubernetes.pod.name\"}}'").Output()
 	if err != nil {
 		if r.debug {
-			log.Println("Error executing `docker ps`", err)
+			log.Printf("Error executing `docker ps`: %s", err)
 		}
 	}
 	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
