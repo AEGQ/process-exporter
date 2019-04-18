@@ -16,6 +16,8 @@ type (
 	Tracker struct {
 		// namer determines what processes to track and names them
 		namer common.MatchNamer
+		// resolvers fill in additional fields in ProcessInfo struct
+		resolvers []Resolver
 		// tracked holds the processes are being monitored.  Processes
 		// may be blacklisted such that they no longer get tracked by
 		// setting their value in the tracked map to nil.
@@ -138,9 +140,10 @@ func (tp *trackedProc) getUpdate() Update {
 }
 
 // NewTracker creates a Tracker.
-func NewTracker(namer common.MatchNamer, trackChildren, trackThreads, alwaysRecheck, debug bool) *Tracker {
+func NewTracker(namer common.MatchNamer, trackChildren, trackThreads, alwaysRecheck, debug bool, resolvers []Resolver) *Tracker {
 	return &Tracker{
 		namer:         namer,
+		resolvers:     resolvers,
 		tracked:       make(map[ID]*trackedProc),
 		procIds:       make(map[int]ID),
 		trackChildren: trackChildren,
@@ -409,6 +412,9 @@ func (t *Tracker) Update(iter Iter) (CollectErrors, []Update, error) {
 			Name:     idinfo.Name,
 			Cmdline:  idinfo.Cmdline,
 			Username: t.lookupUid(idinfo.EffectiveUID),
+		}
+		for _, res := range t.resolvers {
+			res.Resolve(&nacl, idinfo)
 		}
 		wanted, gname := t.namer.MatchAndName(nacl)
 		if wanted {

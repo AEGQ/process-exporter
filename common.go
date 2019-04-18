@@ -7,6 +7,7 @@ type (
 		Name     string
 		Cmdline  []string
 		Username string
+		Pod      string
 	}
 
 	MatchNamer interface {
