@@ -10,7 +10,9 @@ ADD . .
 # Build the process-exporter command inside the container.
 RUN make build
 
-FROM scratch
+FROM trinitronx/jq
+
+RUN apt-get update && apt-get install curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /go/src/github.com/opvizor/process-exporter/process-exporter /bin/process-exporter
 
