@@ -31,6 +31,10 @@ func (r *K8sResolver) String() string {
 
 // NewK8sResolver ...
 func NewK8sResolver(debug bool, procfsPath string, defaultPod string) *K8sResolver {
+	if os.Getenv("KUBE_NODE_NAME") == "" {
+		log.Println("Error: KUBE_NODE_NAME must be set.")
+		return nil		
+	}
 	out, err := exec.Command("bash", "-c", "curl --version >/dev/null && jq --version >/dev/null && echo 'OK'").CombinedOutput()
 	outstr := strings.TrimSuffix(string(out), "\n")
 	if err != nil || outstr != "OK" {
@@ -128,7 +132,7 @@ func (r *K8sResolver) load() {
 	}
 	strpids := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
 	// get pods names and containers from k8s /api/v1/pods
-	cmd = `curl -sSk  -H "Authorization: Bearer $KUBE_TOKEN" "$KUBE_URL/api/v1/pods" |jq -r '.items[] | "\(.metadata.name) \(.status.containerStatuses[]?.containerID)"'|sed -E "s/\w+:\/\///g"`
+	cmd = `curl -sSk  -H "Authorization: Bearer $KUBE_TOKEN" "$KUBE_URL/api/v1/pods?fieldSelector=spec.nodeName%3D$KUBE_NODE_NAME" |jq -r '.items[] | "\(.metadata.name) \(.status.containerStatuses[]?.containerID)"'|sed -E "s/\w+:\/\///g"`
 	out, err = exec.Command("bash", "-c", cmd).Output()
 	if err != nil {
 		log.Println("Error receiving k8s pods: ", err)

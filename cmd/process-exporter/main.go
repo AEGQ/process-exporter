@@ -606,6 +606,9 @@ func (p *NamedProcessCollector) scrape(ch chan<- prometheus.Metric) {
 			// Don't forget to add any new label to slice below
 			// groupname is default label.
 			lmap := parse(gname, []string{"user", "pod"}, "groupname")
+			if lmap["pod"] == "" {
+				continue
+			}
 			ch <- desc["numprocs"].metric(float64(gcounts.Procs), lmap, "")
 			ch <- desc["membytes"].metric(float64(gcounts.Memory.ResidentBytes), lmap, "resident")
 			ch <- desc["membytes"].metric(float64(gcounts.Memory.VirtualBytes), lmap, "virtual")
