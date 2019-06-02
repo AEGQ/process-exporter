@@ -12,7 +12,7 @@ RUN make build
 
 FROM colstrom/jq
 
-RUN package install curl
+RUN package install curl bash
 
 COPY --from=build /go/src/github.com/opvizor/process-exporter/process-exporter /bin/process-exporter
 
