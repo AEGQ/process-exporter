@@ -8,7 +8,7 @@ ADD . .
 #RUN dep ensure
 
 # Build the process-exporter command inside the container.
-RUN make 
+RUN make build
 
 FROM scratch
 
