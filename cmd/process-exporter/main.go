@@ -355,6 +355,8 @@ func main() {
 			"Don't bind, just wait this much time, print the metrics once to stdout, and exit")
 		procNames = flag.String("procnames", "",
 			"comma-separated list of process names to monitor")
+		k8sProcNames = flag.String("k8sprocnames", "",
+			"comma-separated list of k8s process names to monitor")
 		procfsPath = flag.String("procfs", "/proc",
 			"path to read proc data from")
 		nameMapping = flag.String("namemapping", "",
@@ -456,7 +458,7 @@ func main() {
 		labeler.AddResolver(proc.NewK8sResolver(*debug, *procfsPath, *podDefaultLabel))
 	}
 
-	pc, err := NewProcessCollector(*procfsPath, *children, *threads, matchnamer, *recheck, *debug, labeler)
+	pc, err := NewProcessCollector(*k8sProcNames, *procfsPath, *children, *threads, matchnamer, *recheck, *debug, labeler)
 	if err != nil {
 		log.Fatalf("Error initializing: %v", err)
 	}
@@ -510,11 +512,13 @@ type (
 		scrapeProcReadErrors int
 		scrapePartialErrors  int
 		debug                bool
+		k8sProcNames         string
 	}
 )
 
 // NewProcessCollector ...
 func NewProcessCollector(
+	k8sProcNames string,
 	procfsPath string,
 	children bool,
 	threads bool,
@@ -529,11 +533,12 @@ func NewProcessCollector(
 	}
 
 	p := &NamedProcessCollector{
-		scrapeChan: make(chan scrapeRequest),
-		Grouper:    proc.NewGrouper(n, children, threads, recheck, debug, l),
-		source:     fs,
-		threads:    threads,
-		debug:      debug,
+		scrapeChan:   make(chan scrapeRequest),
+		Grouper:      proc.NewGrouper(n, children, threads, recheck, debug, l),
+		source:       fs,
+		threads:      threads,
+		debug:        debug,
+		k8sProcNames: k8sProcNames,
 	}
 
 	colErrs, _, err := p.Update(p.source.AllProcs())
@@ -606,7 +611,7 @@ func (p *NamedProcessCollector) scrape(ch chan<- prometheus.Metric) {
 			// Don't forget to add any new label to slice below
 			// groupname is default label.
 			lmap := parse(gname, []string{"user", "pod"}, "groupname")
-			if lmap["pod"] == "" {
+			if lmap["pod"] == "" && !strings.Contains(p.k8sProcNames, lmap["groupname"]) {
 				continue
 			}
 			ch <- desc["numprocs"].metric(float64(gcounts.Procs), lmap, "")
